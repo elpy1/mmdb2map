@@ -197,6 +197,9 @@ func main() {
 	start := time.Now()
 
 	fmt.Println("Starting network processing...")
+	// Track if we actually found data (helpful for debugging schema mismatches)
+	recordsFound := 0
+
 	for result := range db.Networks() {
 		var rec IPInfoRecord
 		if err := result.Decode(&rec); err != nil {
@@ -205,12 +208,15 @@ func main() {
 		}
 
 		network := result.Prefix().String()
-
 		asn := normalizeASN(rec.ASN)
 		cc := normalizeCC(rec.CountryCode)
 
-		// Write CIDR -> asn|cc (compact, no spaces)
-		// (Skip completely empty records to reduce size, if any)
+		// Debug check: If we parsed 10,000 networks and found no ASNs or CCs, warn user.
+		if recordsFound == 0 && (asn != "0" || cc != "--") {
+			recordsFound++
+		}
+
+		// Write CIDR -> asn|cc
 		if asn != "0" || cc != "--" {
 			ipOut.w.WriteString(network)
 			ipOut.w.WriteString(" ")
@@ -223,22 +229,13 @@ func main() {
 		// Collect ASN metadata
 		if asn != "0" {
 			cur := asnMeta[asn]
-			name := sanitizeField(rec.ASName)
-			domain := sanitizeField(rec.ASDomain)
 
-			// Prefer filling missing fields if seen again
+			// Only sanitize if we are actually going to update
 			if cur.Name == "" || cur.Name == "-" {
-				cur.Name = name
+				cur.Name = sanitizeField(rec.ASName)
 			}
 			if cur.Domain == "" || cur.Domain == "-" {
-				cur.Domain = domain
-			}
-			// Initialize if never set
-			if cur.Name == "" {
-				cur.Name = name
-			}
-			if cur.Domain == "" {
-				cur.Domain = domain
+				cur.Domain = sanitizeField(rec.ASDomain)
 			}
 			asnMeta[asn] = cur
 		}
@@ -246,30 +243,16 @@ func main() {
 		// Collect CountryCode metadata
 		if cc != "--" {
 			cur := ccMeta[cc]
-			country := sanitizeField(rec.Country)
-			contCode := sanitizeField(rec.ContinentCode)
-			cont := sanitizeField(rec.Continent)
 
 			if cur.Country == "" || cur.Country == "-" {
-				cur.Country = country
+				cur.Country = sanitizeField(rec.Country)
 			}
 			if cur.ContinentCode == "" || cur.ContinentCode == "-" {
-				cur.ContinentCode = contCode
+				cur.ContinentCode = sanitizeField(rec.ContinentCode)
 			}
 			if cur.Continent == "" || cur.Continent == "-" {
-				cur.Continent = cont
+				cur.Continent = sanitizeField(rec.Continent)
 			}
-
-			if cur.Country == "" {
-				cur.Country = country
-			}
-			if cur.ContinentCode == "" {
-				cur.ContinentCode = contCode
-			}
-			if cur.Continent == "" {
-				cur.Continent = cont
-			}
-
 			ccMeta[cc] = cur
 		}
 
@@ -277,6 +260,11 @@ func main() {
 		if count%250000 == 0 {
 			fmt.Printf("Processed %d networks...\n", count)
 		}
+	}
+
+	if count > 0 && recordsFound == 0 {
+		log.Println("WARNING: Processed networks but found no ASN or Country data.")
+		log.Println("Check that your MMDB file schema matches the struct tags (maxminddb:\"asn\", etc).")
 	}
 
 	// Write ASN map sorted numerically (nice-to-have)
@@ -350,4 +338,3 @@ func main() {
 		filepath.Join(*outDir, *ccMap),
 	)
 }
-
