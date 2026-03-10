@@ -21,9 +21,14 @@ if [[ ! -f "${TEMP_FILE}" ]]; then
     exit 1
 fi
 
+if [[ -f "${DB_NAME}" ]] && cmp -s "${TEMP_FILE}" "${DB_NAME}"; then
+    echo "No changes detected in MMDB database. Exiting."
+    rm "${TEMP_FILE}"
+    exit 0
+fi
+
 [[ -f "${DB_NAME}" ]] && mv "${DB_NAME}" "${DB_NAME}.old"
 mv "${TEMP_FILE}" "${DB_NAME}"
 
 echo "MMDB database updated successfully."
 [[ -f "${DB_NAME}.old" ]] && echo "Previous database backed up to ${DB_NAME}.old"
-
