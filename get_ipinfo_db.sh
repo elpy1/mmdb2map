@@ -2,7 +2,11 @@
 set -o nounset
 
 # set your ipinfo.io token here
-IPINFO_TOKEN="${IPINFO_TOKEN:-your-token}"
+if [[ -z "${IPINFO_TOKEN:-}" ]]; then
+    echo "Error: IPINFO_TOKEN environment variable is not set."
+    echo "Please set it first: export IPINFO_TOKEN='your_token'"
+    exit 1
+fi
 
 DB_NAME='ipinfo_lite.mmdb'
 DATE="$(date +%Y%m%d)"

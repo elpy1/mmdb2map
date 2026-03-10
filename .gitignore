@@ -1,3 +1,6 @@
+.env
+.token
 *.mmdb
 *.old
 *.map
+mmdb2map

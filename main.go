@@ -68,14 +68,18 @@ func normalizeCC(cc string) string {
 
 // We use '|' as a field separator in map values, so ensure it can never appear inside fields.
 // Also strip newlines to keep each record on one line.
+var fieldSanitizer = strings.NewReplacer(
+	"\r", " ",
+	"\n", " ",
+	"|", "/",
+)
+
 func sanitizeField(s string) string {
-	s = strings.ReplaceAll(s, "\r", " ")
-	s = strings.ReplaceAll(s, "\n", " ")
+	s = fieldSanitizer.Replace(s)
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return emptyField
 	}
-	s = strings.ReplaceAll(s, "|", "/")
 	return s
 }
 
@@ -152,7 +156,8 @@ func main() {
 	var (
 		mmdbFile = flag.String("mmdb", "ipinfo_lite.mmdb", "Path to ipinfo lite MMDB file")
 
-		outDir = flag.String("outdir", ".", "Output directory for HAProxy map files")
+		outDir = flag.String("outdir", ".", "Output directory for HAProxy and Nginx map files")
+		format = flag.String("format", "haproxy", "Output format: 'haproxy' or 'nginx' (adds semicolons)")
 
 		ipMap  = flag.String("ip-map", "ip_to_meta.map", "CIDR -> <asn>|<country_code>")
 		asnMap = flag.String("asn-map", "asn_to_meta.map", "ASN -> <as_name>|<as_domain>")
@@ -164,7 +169,7 @@ func main() {
 	flag.Parse()
 
 	if *help {
-		fmt.Println("mmdb2haproxymaps - Convert ipinfo lite MMDB to HAProxy map files")
+		fmt.Println("mmdb2map - Convert ipinfo lite MMDB to HAProxy and Nginx map files")
 		fmt.Println()
 		flag.PrintDefaults()
 		fmt.Println()
@@ -173,6 +178,15 @@ func main() {
 		fmt.Println("  asn_to_meta.map: <asn>  <as_name>|<as_domain>")
 		fmt.Println("  cc_to_meta.map:  <cc>   <country>|<continent_code>|<continent>")
 		return
+	}
+
+	var lineSuffix string
+	if *format == "nginx" {
+		lineSuffix = ";\n"
+	} else if *format == "haproxy" {
+		lineSuffix = "\n"
+	} else {
+		log.Fatalf("Invalid format: %s. Must be 'haproxy' or 'nginx'", *format)
 	}
 
 	if _, err := os.Stat(*mmdbFile); os.IsNotExist(err) {
@@ -274,7 +288,7 @@ func main() {
 			ipOut.write(asn)
 			ipOut.write("|")
 			ipOut.write(cc)
-			ipOut.write("\n")
+			ipOut.write(lineSuffix)
 		}
 
 		// Collect ASN metadata
@@ -339,7 +353,7 @@ func main() {
 		asnOut.write(v.Name)
 		asnOut.write("|")
 		asnOut.write(v.Domain)
-		asnOut.write("\n")
+		asnOut.write(lineSuffix)
 	}
 	for _, k := range asnNonNumeric {
 		v := asnMeta[k]
@@ -348,7 +362,7 @@ func main() {
 		asnOut.write(v.Name)
 		asnOut.write("|")
 		asnOut.write(v.Domain)
-		asnOut.write("\n")
+		asnOut.write(lineSuffix)
 	}
 
 	// Write CC map sorted alphabetically
@@ -367,7 +381,7 @@ func main() {
 		ccOut.write(v.ContinentCode)
 		ccOut.write("|")
 		ccOut.write(v.Continent)
-		ccOut.write("\n")
+		ccOut.write(lineSuffix)
 	}
 
 	// Commit atomically (rename .tmp -> final) with rollback on failure
